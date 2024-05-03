@@ -20,32 +20,42 @@
 
 {% extends "layout.html" %}
 {% block title %}Teams{% endblock %}
-{% block content %}
+{% block jumbotron %}
+<div class="jumbotron">
+    <div class="container">
+	<h1><span class="fa fa-group"></span> Teams</h1>
+    </div>    
+</div>
+{% endblock %}
 
-<h1>Teams</h1>
+{% block content %}
 
 <div class="row">
     {% for team in teams %}
-    <div class="col-lg-4">
-        <h2 class="text-center">{{ team.name }} (team{{ team.id }})</h2>
+    <div class="col-lg-4 mt-4">
+        <div class="card">
+            <div  class="card-header text-center">{{ team.name }} (team{{ team.id }})</div>
+            <div class="card-body">
         <table class="table" id="team-{{ team.id }}">
             <thead><tr>
                 {% if config.SHOW_NAMES %}
                 <td>Name</td><td>Surname</td>
                 {% endif %}
-                <td>Nickname</td></tr></thead>
-            <tbody>
+                <!-- <td>Nickname</td></tr></thead>  -->
+                <tbody>
               {% for user in users %}
                 {% if team.id == user.team_id %}
                 <tr id="user-{{ user.id }}">
                     {% if config.SHOW_NAMES %}
                     <td>{{ user.name }}</td><td>{{ user.surname }}</td>
                     {% endif %}
-                    <td style="max-width: 132px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">{{ user.nickname }}</td></tr>
-                {% endif %}
+                    <!-- <td style="max-width: 132px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">{{ user.nickname }}</td></tr>  -->
+                    {% endif %}
               {% endfor %}
             </tbody>
         </table>
+            </div>
+        </div>
     </div>
     {% endfor %}
 </div>

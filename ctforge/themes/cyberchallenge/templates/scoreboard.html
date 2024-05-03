@@ -20,13 +20,32 @@
 
 {% extends "layout.html" %}
 {% block title %}CTF Scoreboard{% endblock %}
+{% block container_fluid %}container-fluid{% endblock %}
+
+{% block jumbotron %}
+<div class="jumbotron">
+    <div class="container">
+	<h1><span class="fa fa-line-chart"></span> Scoreboard</h1>
+        <div>
+            {% if rnd > 0 %}
+            Scores computed at round <span id="rnd-scores">{{ rnd - 1 }}</span>.
+            Current round <span id="rnd-current">{{ rnd }}</span>.<br>
+            <span id="countdown-container">
+                Next round starting in <span id="countdown"></span>
+            </span>
+            {% else %}
+            Attack/defense CTF is coming soon
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
 {% block content %}
 
 {% from "_macros.html" import get_status_badge %}
 
-<meta http-equiv="refresh" content="900">
-
-<h1>Scoreboard</h1>
+<!-- <meta http-equiv="refresh" content="900"> -->
 
 <div class="card col-md-8 offset-md-2 mt-4 mb-4" id="freezeinfo" style="display: none;">
     <div class="card-body mx-auto h5 text-center">
@@ -35,27 +54,33 @@
     </div>
 </div>
 
-<p>
-    {% if rnd > 0 %}
-    Scores computed at round <span id="rnd-scores">{{ rnd - 1 }}</span>.
-    Current round <span id="rnd-current">{{ rnd }}</span>.
-    <span id="countdown-container">
-        Next round starting in <span id="countdown"></span>
-    </span>
-    {% else %}
-    Attack/defense CTF is coming soon
-    {% endif %}
-</p>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.9.3/Chart.min.js" integrity="sha512-s+xg36jbIujB2S2VKfpGmlC3T5V2TF3lY48DX7u2r9XzGzgPsa6wTpOQA7J9iffvdeBN0q9tKzRxVxw1JviZPg==" crossorigin="anonymous"></script>
 
-<div class="row">
+<div class="form-inline pull-right">
+    <div class="form-check mb-2 mr-sm-3">
+        <input class="form-check-input" type="checkbox" id="showallcheckbox">
+        <label class="form-check-label" for="showallcheckbox">Show All Teams</label>
+    </div>
+    
+    <div class="input-group mb-2 mr-sm-2">
+        <input type="text" class="form-control form-control-sm" id="ticktodisplay" placeholder="Ticks to Display">
+        <div class="input-group-append">
+            <button class="input-group-text" id="tickstodisplay-refresh"><span class="fa fa-refresh"></span></button>
+        </div>
+    </div>
+    
+</div>
+
+<canvas id="scoregraph" width="450" height="100"></canvas>
+
+<div class="row mt-5">
     <div class="col-md-12">
         <table class="table scoreboard"></table>
     </div>
 </div>
-<div class="row mt-5">
-    <div class="col-md-12">
-        <div id="global_score" class="chart"></div>
-    </div>
+
+<div style="position: fixed; left: 60px; bottom: 20px; opacity: 0.8; z-index: 111110;">
+    <button class="btn btn-small btn-primary" id="auto-scroll"><span class="fa fa-arrows-v"></span> Auto scroll</button>
 </div>
 
 <style>
@@ -76,16 +101,16 @@
 <script>
  var columns = [
      {"name": "position", "title":"#", "classes":"align-middle counter pl-4"},
-     {"name": "team", "title": "Team", "classes": "text-left"},
+     {"name": "team", "title": "Team", "classes": "align-middle text-left"},
      {% for s in services %}
      {
          "name": "{{ s.name }}",
-         "title": "<a href=\"{{ url_for('service', name=s.name) }}\" class=\"btn btn-secondary {% if not s.active %}disabled{% endif %}\" role=\"button\">{{ s.name }}</a>",
+         "title": "<a href=\"{{ url_for('service', name=s.name) }}\" class=\"btn btn-dark challenge-button {% if not s.active %}disabled{% endif %}\" role=\"button\">{{ s.name }}</a>",
          "classes": "text-center",
          "type": "html"
      },
      {% endfor %}
-     {"name": "score", "title": "Global Score", "classes": "text-center", "type": "html"}
+     {"name": "score", "title": "Global Score", "classes": "align-middle text-center", "type": "html"}
  ];
 
  function formatNumber(n) {
@@ -98,7 +123,7 @@
 
      if (s.integrity) {
          integrity_check = s.integrity.status ?
-                           $("<span class='badge badge-info'>UP</span>") :
+                           $("<span class='badge badge-success'>UP</span>") :
                            $("<span class='badge badge-danger'>CORRUPTED</span>");
          integrity_check.attr("title", "last checked at " + s.integrity.timestamp);
      } else {
@@ -151,6 +176,55 @@
      ]);
  }
 
+ 
+ function hashCode(str) {
+     var hash = 0;
+     for (var i = 0; i < str.length; i++) {
+         hash = str.charCodeAt(i) + ((hash << 5) - hash);
+     }
+     return hash;
+ }
+
+ function intToRGB(i){
+     var c = (i & 0x00FFFFFF)
+         .toString(16)
+         .toUpperCase();
+     return "00000".substring(0, 6 - c.length) + c;
+ }
+
+ var ctx = document.getElementById('scoregraph').getContext('2d');
+ Chart.defaults.global.animation.duration = 0;
+ var scoreGraph = new Chart(ctx, {
+     type: 'line',
+     data: {
+         labels: [],
+         datasets: []
+     },
+     options: {
+         legend: {
+             position: 'bottom'
+         },
+         tooltips: {
+             enabled: true,
+         },
+         scales: {
+             yAxes: [{
+                 scaleLabel: {
+                     display: true,
+                     labelString: 'Global Score'
+                 }
+             }],
+             xAxes: [{
+                 scaleLabel: {
+                     display: true,
+                     labelString: 'Round'
+                 }
+             }]
+         },
+     },
+     
+ });
+
  $(document).ready(function() {
      var table = FooTable.init(".scoreboard", {
          "columns": columns
@@ -158,6 +232,41 @@
      var seconds_left = {{ time_left }};
      var current_round = {{ rnd }};
      var update_period = {{ rnd_duration / 20 }};
+
+     var timer = null;
+     var is_scrolling = false;
+     $('#auto-scroll').click(function () {
+         if (is_scrolling) {
+             $('html, body').stop();
+             console.log('clear')
+             window.clearInterval(timer);
+             is_scrolling = false;
+         } else {
+             is_scrolling = true;
+             let auto_scroll_initial_delay = 1000;
+             let auto_scroll_half_duration = 120000;
+             let scroll_page = function () {
+                 console.log("asdasd")
+                 $('html, body').delay(auto_scroll_initial_delay).animate({
+                     scrollTop: $(document).height() - $(window).height()
+                 }, auto_scroll_half_duration, function () {
+                     $(this).animate({
+                         scrollTop: 0
+                     }, auto_scroll_half_duration);
+                     $(this).stop()
+                 });
+             }
+             scroll_page();
+             timer = window.setInterval(scroll_page, auto_scroll_half_duration*3);
+             // stop auto scroll on some events
+             $(document).on('wheel', function () {
+                 $('html, body').stop();
+                 console.log('clear')
+                 window.clearInterval(timer);
+                 is_scrolling = false;
+             });
+         }
+     });
 
      function updateTable() {
          $.getJSON("/ctf_scoreboard", function (data) {
@@ -192,9 +301,67 @@
          });
      }
 
+     if (localStorage.getItem('ticks-to-display')) {
+         $("#ticktodisplay").val(localStorage.getItem('ticks-to-display'))
+     }
+     $("#tickstodisplay-refresh").click(function (){
+         var ticks = $("#ticktodisplay").val()
+         if (ticks) {
+             localStorage.setItem("ticks-to-display", ticks)
+         } else {
+             localStorage.removeItem("ticks-to-display")
+         }
+         updateChart()
+     });
+
+     if (JSON.parse(localStorage.getItem('show-all-teams'))) {
+         $("#showallcheckbox").attr("checked", true)
+     }
+     $("#showallcheckbox").change(function () {
+         var current = JSON.parse(localStorage.getItem('show-all-teams'))
+         localStorage.setItem('show-all-teams', !current)
+         console.log(localStorage.getItem('show-all-teams'))
+         updateChart()
+     })
+     
      function updateChart() {
-         $.getJSON("/ctf_stats/300", function (data) {
-             makeChart('global_score', data, scoresChart);
+         var ticks_to_display = (localStorage.getItem('ticks-to-display') |0) || 20;
+         
+         $.getJSON(`/ctf_stats/${ticks_to_display}`, function (scores) {
+             if (!scores) return;
+
+             scoreGraph.data.labels = []
+             scoreGraph.data.datasets = []
+
+             // top 10 teams
+             var topteams = Object.keys(scores)
+             var show_all_teams = JSON.parse(localStorage.getItem('show-all-teams'));
+             scoreGraph.options.title = { display: false }
+             if (!show_all_teams) {
+                 scoreGraph.options.title = { display: true, text: 'Top 10' }
+                 topteams.sort(function (teamA, teamB) {
+                     return (scores[teamA][current_round-1] - scores[teamB][current_round-1])
+                 }).reverse()
+                 topteams = topteams.slice(0,9)
+             }
+             
+             for (var team of topteams) {
+                 if (scoreGraph.data.labels.length == 0) {
+                     scoreGraph.data.labels = Object.keys(scores[team]).map(parseFloat)
+                 }
+                 var color  = '#' + intToRGB(hashCode(team + 'Oht3xZg8'));
+                 scoreGraph.data.datasets.push({
+                     label: team,
+                     data: Object.values(scores[team]),
+                     backgroundColor: color,
+                     borderColor: color,
+                     borderWidth: 3,
+                     pointRadius: 0,
+                     pointHitRadius: 4,
+                     fill: false
+                 })
+             }
+             scoreGraph.update()
          });
      }
 
